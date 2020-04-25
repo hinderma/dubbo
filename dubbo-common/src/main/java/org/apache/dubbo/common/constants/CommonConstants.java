@@ -24,6 +24,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.regex.Pattern;
 
 public interface CommonConstants {
+    String DUBBOX_VERSION = "2.8.4";
+
     String DUBBO = "dubbo";
 
     String PROVIDER = "provider";

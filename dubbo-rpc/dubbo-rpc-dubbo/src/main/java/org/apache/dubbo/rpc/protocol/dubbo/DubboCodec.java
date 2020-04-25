@@ -16,6 +16,7 @@
  */
 package org.apache.dubbo.rpc.protocol.dubbo;
 
+import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.Version;
 import org.apache.dubbo.common.io.Bytes;
 import org.apache.dubbo.common.io.UnsafeByteArrayInputStream;
@@ -36,9 +37,7 @@ import org.apache.dubbo.rpc.RpcInvocation;
 import java.io.IOException;
 import java.io.InputStream;
 
-import static org.apache.dubbo.common.constants.CommonConstants.DUBBO_VERSION_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.PATH_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.VERSION_KEY;
+import static org.apache.dubbo.common.constants.CommonConstants.*;
 import static org.apache.dubbo.rpc.protocol.dubbo.CallbackServiceCodec.encodeInvocationArgument;
 import static org.apache.dubbo.rpc.protocol.dubbo.Constants.DECODE_IN_IO_THREAD_KEY;
 import static org.apache.dubbo.rpc.protocol.dubbo.Constants.DEFAULT_DECODE_IN_IO_THREAD;
@@ -172,7 +171,22 @@ public class DubboCodec extends ExchangeCodec {
         out.writeUTF(inv.getAttachment(VERSION_KEY));
 
         out.writeUTF(inv.getMethodName());
-        out.writeUTF(inv.getParameterTypesDesc());
+        URL url = inv.getInvoker().getUrl();
+
+        // add by 20200414 增加dubbox处理
+        if (null != url.getParameters() && url.getParameters().containsKey(DUBBO)
+                && url.getParameters().get(DUBBO).equals(DUBBOX_VERSION) ) {
+            log.info(" --------dubbox init ------------");
+            if (serializationType(channel.getUrl()) && !containComplexArguments(inv)) {
+                out.writeInt(inv.getParameterTypes().length);
+            } else {
+                out.writeInt(-1);
+                out.writeUTF(inv.getParameterTypesDesc());
+            }
+        } else {
+            out.writeUTF(inv.getParameterTypesDesc());
+        }
+
         Object[] args = inv.getArguments();
         if (args != null) {
             for (int i = 0; i < args.length; i++) {
@@ -206,5 +220,20 @@ public class DubboCodec extends ExchangeCodec {
             result.getObjectAttachments().put(DUBBO_VERSION_KEY, Version.getProtocolVersion());
             out.writeAttachments(result.getObjectAttachments());
         }
+    }
+
+    private boolean serializationType(URL url) {
+        String serialization = url.getParameter(org.apache.dubbo.remoting.Constants.SERIALIZATION_KEY,
+                org.apache.dubbo.remoting.Constants.DEFAULT_REMOTING_SERIALIZATION);
+        return "fst".equals(serialization) || "kryo".equals(serialization);
+    }
+
+    private boolean containComplexArguments(RpcInvocation invocation) {
+        for (int i = 0; i < invocation.getParameterTypes().length; i++) {
+            if (invocation.getArguments()[i] == null || invocation.getParameterTypes()[i] != invocation.getArguments()[i].getClass()) {
+                return true;
+            }
+        }
+        return false;
     }
 }

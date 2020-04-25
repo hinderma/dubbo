@@ -58,25 +58,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-import static org.apache.dubbo.common.constants.CommonConstants.ANY_VALUE;
-import static org.apache.dubbo.common.constants.CommonConstants.CLUSTER_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.COMMA_SEPARATOR;
-import static org.apache.dubbo.common.constants.CommonConstants.CONSUMER_SIDE;
-import static org.apache.dubbo.common.constants.CommonConstants.DEFAULT_METADATA_STORAGE_TYPE;
-import static org.apache.dubbo.common.constants.CommonConstants.INTERFACE_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.LOCALHOST_VALUE;
-import static org.apache.dubbo.common.constants.CommonConstants.METADATA_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.METHODS_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.MONITOR_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.PROXY_CLASS_REF;
-import static org.apache.dubbo.common.constants.CommonConstants.REMOTE_METADATA_STORAGE_TYPE;
-import static org.apache.dubbo.common.constants.CommonConstants.REVISION_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.SEMICOLON_SPLIT_PATTERN;
-import static org.apache.dubbo.common.constants.CommonConstants.SIDE_KEY;
+import static org.apache.dubbo.common.constants.CommonConstants.*;
 import static org.apache.dubbo.common.utils.NetUtils.isInvalidLocalHost;
 import static org.apache.dubbo.config.Constants.DUBBO_IP_TO_REGISTRY;
-import static org.apache.dubbo.registry.Constants.CONSUMER_PROTOCOL;
-import static org.apache.dubbo.registry.Constants.REGISTER_IP_KEY;
+import static org.apache.dubbo.registry.Constants.*;
 import static org.apache.dubbo.rpc.Constants.LOCAL_PROTOCOL;
 import static org.apache.dubbo.rpc.cluster.Constants.REFER_KEY;
 
@@ -225,6 +210,15 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
         if (metadataReportConfig != null && metadataReportConfig.isValid()) {
             map.putIfAbsent(METADATA_KEY, REMOTE_METADATA_STORAGE_TYPE);
         }
+
+        // add by 20200414. 增加判断版本逻辑（临时处理）
+        if (map.containsKey(VERSION_KEY) && map.get(VERSION_KEY).equals(DUBBOX_VERSION)) {
+//            logger.info("----invoke dubbxo ");
+            map.put(DUBBO, DUBBOX_VERSION);
+//                map.put(VERSION_KEY, map.get(VERSION_KEY));
+            map.remove(VERSION_KEY);
+        }
+
         Map<String, AsyncMethodInfo> attributes = null;
         if (CollectionUtils.isNotEmpty(getMethods())) {
             attributes = new HashMap<>();
@@ -315,7 +309,9 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
             }
 
             if (urls.size() == 1) {
-                invoker = REF_PROTOCOL.refer(interfaceClass, urls.get(0));
+                URL url = urls.get(0);
+                url = checkDubboxUrl(url);
+                invoker = REF_PROTOCOL.refer(interfaceClass, url);
             } else {
                 List<Invoker<?>> invokers = new ArrayList<Invoker<?>>();
                 URL registryURL = null;
@@ -325,6 +321,7 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
                         registryURL = url; // use last registry url
                     }
                 }
+                registryURL = checkDubboxUrl(registryURL);
                 if (registryURL != null) { // registry url is available
                     // for multi-subscription scenario, use 'zone-aware' policy by default
                     URL u = registryURL.addParameterIfAbsent(CLUSTER_KEY, ZoneAwareCluster.NAME);
@@ -364,6 +361,20 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
         }
         // create service proxy
         return (T) PROXY_FACTORY.getProxy(invoker, ProtocolUtils.isGeneric(generic));
+    }
+
+    private URL checkDubboxUrl(URL url) {
+        logger.info("------params url:" + url.toFullString());
+        // add by 20200414 含有version 2.0.0 则任认为是dubbox服务
+        Map<String, String> urlParams = new HashMap<>(url.getParameters());
+        String refer = urlParams.get(REFER_KEY);
+        if (refer.contains(DUBBOX_VERSION)) {
+            urlParams.put(DUBBO, DUBBOX_VERSION);
+            URL newUrl = new URL(url.getProtocol(), url.getHost(), url.getPort(), url.getPath(),urlParams);
+            logger.info("------check resultUrl:" + newUrl.toFullString());
+            return newUrl;
+        }
+        return url;
     }
 
     /**

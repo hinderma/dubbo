@@ -42,10 +42,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.apache.dubbo.common.URL.buildKey;
-import static org.apache.dubbo.common.constants.CommonConstants.DUBBO_VERSION_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.GROUP_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.PATH_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.VERSION_KEY;
+import static org.apache.dubbo.common.constants.CommonConstants.*;
 import static org.apache.dubbo.rpc.protocol.dubbo.CallbackServiceCodec.decodeInvocationArgument;
 
 public class DecodeableRpcInvocation extends RpcInvocation implements Codec, Decodeable {
@@ -113,26 +110,36 @@ public class DecodeableRpcInvocation extends RpcInvocation implements Codec, Dec
         setParameterTypesDesc(desc);
 
         try {
-            Object[] args = DubboCodec.EMPTY_OBJECT_ARRAY;
-            Class<?>[] pts = DubboCodec.EMPTY_CLASS_ARRAY;
-            if (desc.length() > 0) {
-//                if (RpcUtils.isGenericCall(path, getMethodName()) || RpcUtils.isEcho(path, getMethodName())) {
-//                    pts = ReflectUtils.desc2classArray(desc);
-//                } else {
-                ServiceRepository repository = ApplicationModel.getServiceRepository();
-                ServiceDescriptor serviceDescriptor = repository.lookupService(path);
-                if (serviceDescriptor != null) {
-                    MethodDescriptor methodDescriptor = serviceDescriptor.getMethod(getMethodName(), desc);
-                    if (methodDescriptor != null) {
-                        pts = methodDescriptor.getParameterClasses();
-                        this.setReturnTypes(methodDescriptor.getReturnTypes());
+
+            Object[] args;
+            Class<?>[] pts;
+
+            String pattern = "-?[0-9]+.?[0-9]*";
+            if (dubboVersion.equals(DUBBOX_VERSION) &&  desc.matches(pattern)) {
+                log.info("----------- dubbox start ------------------");
+                int argNum = Integer.parseInt(desc);
+                if (argNum == 0) {
+                    pts = DubboCodec.EMPTY_CLASS_ARRAY;
+                    args = DubboCodec.EMPTY_OBJECT_ARRAY;
+                } else {
+                    args = new Object[argNum];
+                    pts = new Class[argNum];
+                    for (int i = 0; i < args.length; i++) {
+                        try {
+                            args[i] = in.readObject();
+                            pts[i] = args[i].getClass();
+                        } catch (Exception e) {
+                            if (log.isWarnEnabled()) {
+                                log.warn("Decode argument failed: " + e.getMessage(), e);
+                            }
+                        }
                     }
                 }
-                if (pts == DubboCodec.EMPTY_CLASS_ARRAY) {
-                    pts = ReflectUtils.desc2classArray(desc);
-                }
-//                }
-
+            } else if (desc.length() == 0) {
+                pts = DubboCodec.EMPTY_CLASS_ARRAY;
+                args = DubboCodec.EMPTY_OBJECT_ARRAY;
+            } else {
+                pts = ReflectUtils.desc2classArray(desc);
                 args = new Object[pts.length];
                 for (int i = 0; i < args.length; i++) {
                     try {
